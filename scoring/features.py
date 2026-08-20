@@ -1,6 +1,7 @@
 """Признаки для модели фрода. 
 """
 import pandas as pd
+import redis 
 
 
 def add_instant_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -54,3 +55,80 @@ FEATURE_COLUMNS = [
     "destTxnCountSoFar",
     "destAmountSoFar",
 ]
+
+def instant_features_one(txn: dict) -> dict:
+    """Мгновенные признаки для ОДНОЙ транзакции (стриминг).
+    Те же формулы, что в add_instant_features, только на одной операции, а не на колонке."""
+    amount = txn["amount"]
+    return {
+        "amount": amount,
+        "errorBalanceOrig": txn["oldbalanceOrg"] - amount - txn["newbalanceOrig"],
+        "errorBalanceDest": txn["oldbalanceDest"] + amount - txn["newbalanceDest"],
+        "amountToBalanceRatio": amount / (txn["oldbalanceOrg"] + 1),
+        "origBalanceZeroed": int(txn["newbalanceOrig"] == 0 and amount > 0),
+        "hourOfDay": txn["step"] % 24,
+    }
+
+class VelocityState:
+    """Помнит по каждому получателю: сколько операций принял и на какую сумму.
+    Пока состояние — в обычном словаре в памяти. Позже заменим словарь на Redis."""
+
+    def __init__(self):
+        self.count = {}   # nameDest -> сколько операций уже принял
+        self.total = {}   # nameDest -> сумма уже принятого
+
+    def velocity_features_one(self, txn: dict) -> dict:
+        dest = txn["nameDest"]
+        amount = txn["amount"]
+
+        # 1. ЧИТАЕМ состояние ДО обновления — это "so far" (только прошлое)
+        count_so_far = self.count.get(dest, 0)     # 0, если получателя ещё не видели
+        amount_so_far = self.total.get(dest, 0.0)
+
+        # 2. ОБНОВЛЯЕМ состояние (для будущих транзакций этого получателя)
+        self.count[dest] = count_so_far + 1
+        self.total[dest] = amount_so_far + amount
+
+        # 3. Признаки = состояние ДО текущей операции
+        return {
+            "destTxnCountSoFar": count_so_far,
+            "destAmountSoFar": amount_so_far,
+        }
+
+    def features_one(self, txn: dict) -> dict:
+        """Полный набор признаков для ОДНОЙ транзакции: instant + velocity."""
+        feats = instant_features_one(txn)               # 6 мгновенных
+        feats.update(self.velocity_features_one(txn))   # + 2 velocity (и обновит состояние)
+        return feats
+
+
+class RedisVelocityState:
+
+    def __init__(self, host="localhost", port=6379):
+        # decode_responses=True → Redis возвращает строки, а не байты 
+        self.r = redis.Redis(host=host, port=port, decode_responses=True)
+
+    def velocity_features_one(self, txn: dict) -> dict:
+        dest = txn["nameDest"]
+        amount = txn["amount"]
+        count_key = f"count:{dest}"     # ключ в Redis для счётчика этого получателя
+        total_key = f"total:{dest}"     # ключ для суммы
+
+        # 1. ЧИТАЕМ состояние ДО обновления (если ключа нет — 0)
+        count_so_far = int(self.r.get(count_key) or 0)
+        amount_so_far = float(self.r.get(total_key) or 0.0)
+
+        # 2. ОБНОВЛЯЕМ прямо в Redis
+        self.r.incr(count_key, 1)                # +1 к счётчику
+        self.r.incrbyfloat(total_key, amount)    # +amount к сумме
+
+        # 3. Признаки = состояние ДО текущей операции
+        return {
+            "destTxnCountSoFar": count_so_far,
+            "destAmountSoFar": amount_so_far,
+        }
+
+    def features_one(self, txn: dict) -> dict:
+        feats = instant_features_one(txn)
+        feats.update(self.velocity_features_one(txn))
+        return feats
