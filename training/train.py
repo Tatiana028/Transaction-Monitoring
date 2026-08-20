@@ -5,6 +5,9 @@ from scoring.features import build_features, FEATURE_COLUMNS
 import lightgbm as lgb
 from sklearn.metrics import average_precision_score
 
+import joblib
+from pathlib import Path
+
 # 1. Загружаем сырые данные
 df = pd.read_csv("data/paysim.csv")
 
@@ -49,3 +52,9 @@ print("PR-AUC на тесте:", round(pr_auc, 4))
 importances = pd.Series(model.feature_importances_, index=FEATURE_COLUMNS)
 print("\nВажность признаков:")
 print(importances.sort_values(ascending=False))
+
+# 9. Сохраняем модель и тестовую выборку на диск (в папку models/)
+Path("models").mkdir(exist_ok=True)            # создаём папку, если её ещё нет
+joblib.dump(model, "models/fraud_model.pkl")   # сама модель — главный артефакт
+test.to_pickle("models/test_set.pkl")          # тест — чтобы evaluate.py не пересчитывал
+print("Модель сохранена в models/")
