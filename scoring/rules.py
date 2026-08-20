@@ -2,27 +2,26 @@
 
 # Пороги правил в ОДНОМ месте (конфиг), а не захардкожены по коду.
 THRESHOLDS = {
-    "large_amount": 200_000,      # подозрительно крупная сумма
-    "high_dest_velocity": 20,     # получатель принял слишком много переводов
+    "large_amount": 1_000_000,    # было 200_000 — слишком часто
+    "high_dest_velocity": 20,
 }
 
 
 def check_rules(txn: dict, feats: dict) -> list:
-    """Прогоняет все правила по одной транзакции.
-    txn   — сырые поля операции,
-    feats — уже посчитанные признаки (из features_one).
-    Возвращает список названий СРАБОТАВШИХ правил."""
+    """Прогоняет правила по одной транзакции. Возвращает список сработавших."""
     fired = []
 
-    # Правило 1: слишком крупная сумма
+    # Правило 1: по-настоящему крупная сумма
     if txn["amount"] > THRESHOLDS["large_amount"]:
         fired.append("large_amount")
 
-    # Правило 2: счёт отправителя обнулён под ноль
-    if feats["origBalanceZeroed"] == 1:
+    # Правило 2: TRANSFER, уводящий ВЕСЬ баланс с непустого счёта (классика фрода)
+    if (txn["type"] == "TRANSFER"
+            and txn["oldbalanceOrg"] > 0
+            and feats["origBalanceZeroed"] == 1):
         fired.append("orig_balance_zeroed")
 
-    # Правило 3: всплеск velocity — получатель принял слишком много переводов
+    # Правило 3: всплеск velocity получателя
     if feats["destTxnCountSoFar"] > THRESHOLDS["high_dest_velocity"]:
         fired.append("high_dest_velocity")
 
