@@ -2,6 +2,7 @@
 """
 import pandas as pd
 import redis 
+import os 
 
 
 def add_instant_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -74,9 +75,9 @@ class VelocityState:
     Пока состояние — в обычном словаре в памяти. Позже заменим словарь на Redis."""
 
     def __init__(self):
-        self.count = {}   # nameDest -> сколько операций уже принял
-        self.total = {}   # nameDest -> сумма уже принятого
-
+        self.count = {}   # nameDest -> сколько операций принял
+        self.total = {}   # nameDest -> сумма принятого
+    
     def velocity_features_one(self, txn: dict) -> dict:
         dest = txn["nameDest"]
         amount = txn["amount"]
@@ -104,8 +105,9 @@ class VelocityState:
 
 class RedisVelocityState:
 
-    def __init__(self, host="localhost", port=6379):
-        # decode_responses=True → Redis возвращает строки, а не байты 
+    def __init__(self, host=None, port=6379):
+        host = host or os.environ.get("REDIS_HOST", "localhost")
+        # decode_responses=True → Redis возвращает строки, а не байты
         self.r = redis.Redis(host=host, port=port, decode_responses=True)
 
     def velocity_features_one(self, txn: dict) -> dict:

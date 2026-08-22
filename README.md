@@ -47,26 +47,16 @@ Python · pandas · LightGBM · Redis (stream + velocity state) · SQLite · Str
 
 ## Quickstart
 
+Prerequisites: Docker Desktop and Python 3.11+.
+
 ```bash
-# 1. Environment
+# 1. Python environment (for the one-time data download + training)
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Data (downloads PaySim from Kaggle)
+# 2. One-time: download PaySim and train the model
 python data/download.py
-
-# 3. Train the model
 python -m training.train
 
-# 4. Start Redis
-brew services start redis
-
-# 5. Stream: emit transactions, then score them
-python -m producer.emit
-python -m scoring.consumer
-
-# 6. Dashboard
-streamlit run dashboard/app.py
-```
-
-_One-command startup via `docker-compose up` is on the roadmap._
+# 3. Run the whole system (Redis + producer + consumer + dashboard)
+docker compose up --build
