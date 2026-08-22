@@ -1,0 +1,44 @@
+services:
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:                          # ждём, пока Redis реально готов
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+
+  producer:
+    build: .
+    command: python -m producer.emit
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+    volumes:
+      - ./data:/app/data                  # данные с твоей машины
+
+  consumer:
+    build: .
+    command: python -m scoring.consumer
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+    volumes:
+      - ./models:/app/models              # обученная модель
+      - ./db:/app/db                      # общая база
+
+  dashboard:
+    build: .
+    command: streamlit run dashboard/app.py --server.address=0.0.0.0
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./db:/app/db                      # та же база, что у консьюмера

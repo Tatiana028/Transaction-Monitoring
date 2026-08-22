@@ -2,12 +2,14 @@
 import time
 import pandas as pd
 import redis
+import os 
 
 STREAM = "transactions"
 
 
 def main(limit: int = 1000, delay: float = 0.01):
-    r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+    r = redis.Redis(host=os.environ.get("REDIS_HOST", "localhost"),
+                    port=6379, decode_responses=True)
     r.delete(STREAM)   # чистим поток перед новым прогоном
 
     df = pd.read_csv("data/paysim.csv")
